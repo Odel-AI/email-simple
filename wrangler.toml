@@ -1,0 +1,11 @@
+name = "email-simple-module"
+main = "src/index.ts"
+compatibility_date = "2025-01-17"
+compatibility_flags = ["nodejs_compat"]
+
+# Analytics Engine binding for email tracking
+[[analytics_engine_datasets]]
+binding = "ANALYTICS"
+
+[observability]
+enabled = true

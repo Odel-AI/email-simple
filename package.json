@@ -1,0 +1,36 @@
+{
+  "name": "@odel/email-simple",
+  "version": "0.0.1",
+  "description": "Email module for Odel - sends transactional emails via Resend",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "deploy": "wrangler deploy",
+    "dev": "wrangler dev"
+  },
+  "keywords": [
+    "odel",
+    "email",
+    "resend",
+    "transactional",
+    "mcp",
+    "cloudflare-workers"
+  ],
+  "author": "Odel",
+  "license": "MIT",
+  "dependencies": {
+    "@odel/module-sdk": "^0.0.3",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.10.7",
+    "@cloudflare/workers-types": "^4.20250110.0",
+    "typescript": "^5.9.2",
+    "vitest": "~3.2.0",
+    "wrangler": "^3.102.0"
+  },
+  "packageManager": "pnpm@10.20.0"
+}
