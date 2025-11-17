@@ -11,9 +11,7 @@ dist/
 .env
 .env.*
 !.env.example
-
-# Development
-.dev.vars.example
+!.dev.vars.example
 
 # Testing
 coverage/

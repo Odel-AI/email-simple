@@ -1,0 +1,6 @@
+# Resend API Key
+# Get your API key from: https://resend.com/api-keys
+# This file is a template - copy it to .dev.vars and add your real API key
+# NEVER commit .dev.vars to git!
+
+RESEND_API_KEY=re_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
