@@ -5,7 +5,15 @@
  * Includes abuse prevention with user tracking and report links.
  */
 
-import { createModule, SuccessResponseSchema, type ToolContext } from '@odel/module-sdk';
+import { McpServer } from '@odel/module-sdk/server/mcp.js';
+import { WebStandardStreamableHTTPServerTransport } from '@odel/module-sdk/server/webStandardStreamableHttp.js';
+import {
+	SuccessResponseSchema,
+	extractToolContext,
+	type ToolContext,
+	type RequestBodyWithContext
+} from '@odel/module-sdk/odel';
+import type { CallToolResult } from '@odel/module-sdk/types.js';
 import { z } from 'zod';
 
 // Environment bindings
@@ -15,12 +23,12 @@ interface Env {
 }
 
 // Input schema
-const SendEmailInputSchema = z.object({
+const SendEmailInputSchema = {
 	to: z.string().email().describe('Recipient email address'),
 	subject_suffix: z.string().describe('Email subject suffix (will be prefixed with "Odel has sent: ")'),
 	text: z.string().describe('Plain text email body'),
 	html: z.string().optional().describe('Optional HTML email body for rich formatting')
-});
+};
 
 // Output schema
 const SendEmailOutputSchema = SuccessResponseSchema(
@@ -29,6 +37,9 @@ const SendEmailOutputSchema = SuccessResponseSchema(
 		to: z.string().describe('Confirmed recipient email address')
 	})
 );
+
+type SendEmailInput = z.infer<z.ZodObject<typeof SendEmailInputSchema>>;
+type SendEmailOutput = z.infer<typeof SendEmailOutputSchema>;
 
 /**
  * Generate UUID v4
@@ -40,13 +51,14 @@ function generateUUID(): string {
 /**
  * Build email footer with user attribution and abuse report link
  */
-function buildFooter(userId: string, displayName: string, trackingId: string): { text: string; html: string } {
+function buildFooter(userId: string, displayName: string | undefined, trackingId: string): { text: string; html: string } {
 	const reportUrl = `https://odel.app/report-abuse?id=${trackingId}`;
+	const safeDisplayName = displayName || 'Unknown User';
 
 	const text = `
 
 ───────────────────────────────
-Sent on behalf of: ${displayName} (ID: ${userId})
+Sent on behalf of: ${safeDisplayName} (ID: ${userId})
 This is an automated email - please do not reply to this address.
 Report abuse: ${reportUrl}
 `;
@@ -54,7 +66,7 @@ Report abuse: ${reportUrl}
 	const html = `
 <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 24px 0;">
 <p style="font-size: 12px; color: #6b7280; margin: 0;">
-	<strong>Sent on behalf of:</strong> ${escapeHtml(displayName)} (ID: ${userId})<br>
+	<strong>Sent on behalf of:</strong> ${escapeHtml(safeDisplayName)} (ID: ${userId})<br>
 	<em>This is an automated email - please do not reply to this address.</em><br>
 	<a href="${reportUrl}" style="color: #3b82f6; text-decoration: none;">Report abuse</a>
 </p>
@@ -118,7 +130,7 @@ function logEmailSent(
 	trackingId: string,
 	userId: string,
 	conversationId: string | undefined,
-	displayName: string,
+	displayName: string | undefined,
 	recipient: string,
 	resendId: string,
 	status: 'sent' | 'failed',
@@ -128,8 +140,8 @@ function logEmailSent(
 		indexes: [trackingId],
 		blobs: [
 			userId,
-			conversationId || '',  // Empty string if no conversation
-			displayName,
+			conversationId || '',
+			displayName || '',
 			recipient,
 			resendId,
 			status
@@ -138,87 +150,175 @@ function logEmailSent(
 	});
 }
 
-// Create module
-export default createModule<Env>()
-	.tool({
-		name: 'send_email',
-		description: 'Send an email to a recipient with optional HTML formatting',
-		inputSchema: SendEmailInputSchema,
-		outputSchema: SendEmailOutputSchema,
-		handler: async (input, context: ToolContext<Env>) => {
-			try {
-				// Generate tracking UUID
-				const trackingId = generateUUID();
+/**
+ * Create the MCP server instance
+ */
+function createServer() {
+	const server = new McpServer({
+		name: 'email-simple',
+		version: '0.0.2'
+	});
 
-				// Build footer with user attribution
-				const footer = buildFooter(
+	return server;
+}
+
+/**
+ * Create the send_email tool handler
+ */
+function createSendEmailHandler(context: ToolContext<Env>) {
+	return async (input: SendEmailInput): Promise<SendEmailOutput> => {
+		try {
+			// Generate tracking UUID
+			const trackingId = generateUUID();
+
+			// Build footer with user attribution
+			const footer = buildFooter(
+				context.userId,
+				context.displayName,
+				trackingId
+			);
+
+			// Append footer to email content
+			const fullText = input.text + footer.text;
+			const fullHtml = input.html
+				? input.html + footer.html
+				: undefined;
+
+			// Construct subject
+			const subject = `Odel has sent: ${input.subject_suffix}`;
+
+			// Send via Resend
+			const result = await sendViaResend(
+				context.env.RESEND_API_KEY,
+				'Odel Assistant <noreply@mail.odel.app>',
+				input.to,
+				subject,
+				fullText,
+				fullHtml
+			);
+
+			// Log to Analytics Engine (if available)
+			if (context.env.ANALYTICS) {
+				logEmailSent(
+					context.env.ANALYTICS,
+					trackingId,
 					context.userId,
+					context.conversationId,
 					context.displayName,
-					trackingId
-				);
-
-				// Append footer to email content
-				const fullText = input.text + footer.text;
-				const fullHtml = input.html
-					? input.html + footer.html
-					: undefined;
-
-				// Construct subject
-				const subject = `Odel has sent: ${input.subject_suffix}`;
-
-				// Send via Resend
-				const result = await sendViaResend(
-					context.env.RESEND_API_KEY,
-					'Odel Assistant <noreply@mail.odel.app>',
 					input.to,
-					subject,
-					fullText,
-					fullHtml
+					result.id,
+					'sent',
+					input.text.length
 				);
-
-				// Log to Analytics Engine (if available)
-				if (context.env.ANALYTICS) {
-					logEmailSent(
-						context.env.ANALYTICS,
-						trackingId,
-						context.userId,
-						context.conversationId,
-						context.displayName,
-						input.to,
-						result.id,
-						'sent',
-						input.text.length
-					);
-				}
-
-				return {
-					success: true as const,
-					id: result.id,
-					to: input.to
-				};
-
-			} catch (error: any) {
-				// Log failed attempt (if analytics available)
-				if (context.env.ANALYTICS) {
-					const trackingId = generateUUID();
-					logEmailSent(
-						context.env.ANALYTICS,
-						trackingId,
-						context.userId,
-						context.conversationId,
-						context.displayName,
-						input.to,
-						'',
-						'failed',
-						input.text.length
-					);
-				}
-
-				return {
-					success: false as const,
-					error: `Failed to send email: ${error.message}`
-				};
 			}
+
+			return {
+				success: true as const,
+				id: result.id,
+				to: input.to
+			};
+
+		} catch (error: unknown) {
+			// Log failed attempt (if analytics available)
+			if (context.env.ANALYTICS) {
+				const trackingId = generateUUID();
+				logEmailSent(
+					context.env.ANALYTICS,
+					trackingId,
+					context.userId,
+					context.conversationId,
+					context.displayName,
+					input.to,
+					'',
+					'failed',
+					input.text.length
+				);
+			}
+
+			const errorMessage = error instanceof Error ? error.message : String(error);
+			return {
+				success: false as const,
+				error: `Failed to send email: ${errorMessage}`
+			};
 		}
-	})
-	.build();
+	};
+}
+
+// Create transport for stateless HTTP requests
+const transport = new WebStandardStreamableHTTPServerTransport();
+
+// Cloudflare Worker export
+export default {
+	async fetch(request: Request, env: Env): Promise<Response> {
+		// Health check endpoint
+		if (request.method === 'GET' && new URL(request.url).pathname === '/health') {
+			return new Response(JSON.stringify({ status: 'ok' }), {
+				headers: { 'Content-Type': 'application/json' }
+			});
+		}
+
+		// Only accept POST for MCP
+		if (request.method !== 'POST') {
+			return new Response(JSON.stringify({
+				jsonrpc: '2.0',
+				error: { code: -32000, message: 'Method not allowed' },
+				id: null
+			}), {
+				status: 405,
+				headers: { 'Content-Type': 'application/json' }
+			});
+		}
+
+		try {
+			// Parse the request body to extract context
+			const body = await request.json() as RequestBodyWithContext;
+			const context = extractToolContext(body, env);
+
+			// Create a fresh server for each request (stateless)
+			const server = createServer();
+
+			// Register the send_email tool with context-aware handler
+			const handler = createSendEmailHandler(context);
+			server.registerTool(
+				'send_email',
+				{
+					description: 'Send an email to a recipient with optional HTML formatting',
+					inputSchema: SendEmailInputSchema,
+					outputSchema: SendEmailOutputSchema
+				},
+				async (args): Promise<CallToolResult> => {
+					const result = await handler(args as SendEmailInput);
+					return {
+						content: [{ type: 'text', text: JSON.stringify(result) }],
+						structuredContent: result
+					};
+				}
+			);
+
+			// Connect and handle the request
+			await server.connect(transport);
+
+			// Reconstruct the request with the parsed body for the transport
+			const newRequest = new Request(request.url, {
+				method: request.method,
+				headers: request.headers,
+				body: JSON.stringify(body)
+			});
+
+			return transport.handleRequest(newRequest);
+		} catch (error) {
+			console.error('Error handling MCP request:', error);
+			return new Response(JSON.stringify({
+				jsonrpc: '2.0',
+				error: {
+					code: -32603,
+					message: 'Internal server error'
+				},
+				id: null
+			}), {
+				status: 500,
+				headers: { 'Content-Type': 'application/json' }
+			});
+		}
+	}
+};

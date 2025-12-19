@@ -1,7 +1,8 @@
 {
   "name": "@odel/email-simple",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Email module for Odel - sends transactional emails via Resend",
+  "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "scripts": {
@@ -22,7 +23,7 @@
   "author": "Odel",
   "license": "MIT",
   "dependencies": {
-    "@odel/module-sdk": "^0.0.3",
+    "@odel/module-sdk": "^1.0.3",
     "zod": "^3.25.76"
   },
   "devDependencies": {
