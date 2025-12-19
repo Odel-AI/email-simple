@@ -26,11 +26,6 @@ cp .dev.vars.example .dev.vars
 # Edit .dev.vars and add your real API key
 ```
 
-**For Production:**
-```bash
-wrangler secret put RESEND_API_KEY
-# Paste your API key when prompted
-```
 
 ⚠️ **IMPORTANT**: Never commit `.dev.vars` or your real API key to git!
 

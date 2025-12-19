@@ -137,11 +137,19 @@ function createServer() {
  */
 function createSendEmailHandler(context: ToolContext<Env>) {
 	// Extract context values with fallbacks (defensive against undefined)
-	const userId = context.userId || 'anonymous';
-	const displayName = context.displayName || 'Anonymous User';
+	const userId = context?.userId || 'anonymous';
+	const displayName = context?.displayName || 'Anonymous User';
 
 	return async (input: SendEmailInput): Promise<SendEmailOutput> => {
 		try {
+			// Validate required input fields
+			if (!input.to || !input.subject_suffix || !input.text) {
+				return {
+					success: false as const,
+					error: 'Missing required fields: to, subject_suffix, and text are required'
+				};
+			}
+
 			// Generate tracking UUID
 			const trackingId = generateUUID();
 
