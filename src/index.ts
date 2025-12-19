@@ -19,7 +19,6 @@ import { z } from 'zod';
 // Environment bindings
 interface Env {
 	RESEND_API_KEY: string;
-	ANALYTICS: AnalyticsEngineDataset;
 }
 
 // Input schema
@@ -51,14 +50,13 @@ function generateUUID(): string {
 /**
  * Build email footer with user attribution and abuse report link
  */
-function buildFooter(userId: string, displayName: string | undefined, trackingId: string): { text: string; html: string } {
+function buildFooter(userId: string, displayName: string, trackingId: string): { text: string; html: string } {
 	const reportUrl = `https://odel.app/report-abuse?id=${trackingId}`;
-	const safeDisplayName = displayName || 'Unknown User';
 
 	const text = `
 
 ───────────────────────────────
-Sent on behalf of: ${safeDisplayName} (ID: ${userId})
+Sent on behalf of: ${displayName} (ID: ${userId})
 This is an automated email - please do not reply to this address.
 Report abuse: ${reportUrl}
 `;
@@ -66,7 +64,7 @@ Report abuse: ${reportUrl}
 	const html = `
 <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 24px 0;">
 <p style="font-size: 12px; color: #6b7280; margin: 0;">
-	<strong>Sent on behalf of:</strong> ${escapeHtml(safeDisplayName)} (ID: ${userId})<br>
+	<strong>Sent on behalf of:</strong> ${escapeHtml(displayName)} (ID: ${userId})<br>
 	<em>This is an automated email - please do not reply to this address.</em><br>
 	<a href="${reportUrl}" style="color: #3b82f6; text-decoration: none;">Report abuse</a>
 </p>
@@ -123,34 +121,6 @@ async function sendViaResend(
 }
 
 /**
- * Log email send event to Analytics Engine
- */
-function logEmailSent(
-	analytics: AnalyticsEngineDataset,
-	trackingId: string,
-	userId: string,
-	conversationId: string | undefined,
-	displayName: string | undefined,
-	recipient: string,
-	resendId: string,
-	status: 'sent' | 'failed',
-	textLength: number
-): void {
-	analytics.writeDataPoint({
-		indexes: [trackingId],
-		blobs: [
-			userId,
-			conversationId || '',
-			displayName || '',
-			recipient,
-			resendId,
-			status
-		],
-		doubles: [textLength]
-	});
-}
-
-/**
  * Create the MCP server instance
  */
 function createServer() {
@@ -166,6 +136,10 @@ function createServer() {
  * Create the send_email tool handler
  */
 function createSendEmailHandler(context: ToolContext<Env>) {
+	// Extract context values with fallbacks (defensive against undefined)
+	const userId = context.userId || 'anonymous';
+	const displayName = context.displayName || 'Anonymous User';
+
 	return async (input: SendEmailInput): Promise<SendEmailOutput> => {
 		try {
 			// Generate tracking UUID
@@ -173,8 +147,8 @@ function createSendEmailHandler(context: ToolContext<Env>) {
 
 			// Build footer with user attribution
 			const footer = buildFooter(
-				context.userId,
-				context.displayName,
+				userId,
+				displayName,
 				trackingId
 			);
 
@@ -197,21 +171,6 @@ function createSendEmailHandler(context: ToolContext<Env>) {
 				fullHtml
 			);
 
-			// Log to Analytics Engine (if available)
-			if (context.env.ANALYTICS) {
-				logEmailSent(
-					context.env.ANALYTICS,
-					trackingId,
-					context.userId,
-					context.conversationId,
-					context.displayName,
-					input.to,
-					result.id,
-					'sent',
-					input.text.length
-				);
-			}
-
 			return {
 				success: true as const,
 				id: result.id,
@@ -219,22 +178,6 @@ function createSendEmailHandler(context: ToolContext<Env>) {
 			};
 
 		} catch (error: unknown) {
-			// Log failed attempt (if analytics available)
-			if (context.env.ANALYTICS) {
-				const trackingId = generateUUID();
-				logEmailSent(
-					context.env.ANALYTICS,
-					trackingId,
-					context.userId,
-					context.conversationId,
-					context.displayName,
-					input.to,
-					'',
-					'failed',
-					input.text.length
-				);
-			}
-
 			const errorMessage = error instanceof Error ? error.message : String(error);
 			return {
 				success: false as const,
