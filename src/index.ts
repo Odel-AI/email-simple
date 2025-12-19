@@ -8,7 +8,6 @@
 import { McpServer } from '@odel/module-sdk/server/mcp.js';
 import { WebStandardStreamableHTTPServerTransport } from '@odel/module-sdk/server/webStandardStreamableHttp.js';
 import {
-	SuccessResponseSchema,
 	extractToolContext,
 	type ToolContext,
 	type RequestBodyWithContext
@@ -29,16 +28,12 @@ const SendEmailInputSchema = {
 	html: z.string().optional().describe('Optional HTML email body for rich formatting')
 };
 
-// Output schema
-const SendEmailOutputSchema = SuccessResponseSchema(
-	z.object({
-		id: z.string().describe('Resend email ID for tracking'),
-		to: z.string().describe('Confirmed recipient email address')
-	})
-);
-
 type SendEmailInput = z.infer<z.ZodObject<typeof SendEmailInputSchema>>;
-type SendEmailOutput = z.infer<typeof SendEmailOutputSchema>;
+
+// Output types
+type SendEmailSuccess = { success: true; id: string; to: string };
+type SendEmailError = { success: false; error: string };
+type SendEmailOutput = SendEmailSuccess | SendEmailError;
 
 /**
  * Generate UUID v4
@@ -195,9 +190,6 @@ function createSendEmailHandler(context: ToolContext<Env>) {
 	};
 }
 
-// Create transport for stateless HTTP requests
-const transport = new WebStandardStreamableHTTPServerTransport();
-
 // Cloudflare Worker export
 export default {
 	async fetch(request: Request, env: Env): Promise<Response> {
@@ -225,8 +217,9 @@ export default {
 			const body = await request.json() as RequestBodyWithContext;
 			const context = extractToolContext(body, env);
 
-			// Create a fresh server for each request (stateless)
+			// Create a fresh server and transport for each request (stateless)
 			const server = createServer();
+			const transport = new WebStandardStreamableHTTPServerTransport();
 
 			// Register the send_email tool with context-aware handler
 			const handler = createSendEmailHandler(context);
@@ -234,8 +227,7 @@ export default {
 				'send_email',
 				{
 					description: 'Send an email to a recipient with optional HTML formatting',
-					inputSchema: SendEmailInputSchema,
-					outputSchema: SendEmailOutputSchema
+					inputSchema: SendEmailInputSchema
 				},
 				async (args): Promise<CallToolResult> => {
 					const result = await handler(args as SendEmailInput);

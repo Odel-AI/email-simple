@@ -1,0 +1,5 @@
+{
+  "name": "email-simple",
+  "compatibility_date": "2025-12-19",
+  "main": "src/index.ts"
+}
