@@ -23,7 +23,7 @@
   "author": "Odel",
   "license": "MIT",
   "dependencies": {
-    "@odel/module-sdk": "^1.0.4",
+    "@odel/module-sdk": "^1.0.5",
     "zod": "^3.25.76"
   },
   "devDependencies": {
