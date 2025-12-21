@@ -1,6 +1,6 @@
 {
   "name": "@odel/email-simple",
-  "version": "0.0.2",
+  "version": "1.0.1",
   "description": "Email module for Odel - sends transactional emails via Resend",
   "type": "module",
   "main": "./dist/index.js",

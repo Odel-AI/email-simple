@@ -30,10 +30,20 @@ const SendEmailInputSchema = {
 
 type SendEmailInput = z.infer<z.ZodObject<typeof SendEmailInputSchema>>;
 
-// Output types
-type SendEmailSuccess = { success: true; id: string; to: string };
-type SendEmailError = { success: false; error: string };
-type SendEmailOutput = SendEmailSuccess | SendEmailError;
+// Output schema
+const SendEmailOutputSchema = z.discriminatedUnion('success', [
+	z.object({
+		success: z.literal(true),
+		id: z.string().describe('Email ID from Resend'),
+		to: z.string().describe('Recipient email address')
+	}),
+	z.object({
+		success: z.literal(false),
+		error: z.string().describe('Error message')
+	})
+]);
+
+type SendEmailOutput = z.infer<typeof SendEmailOutputSchema>;
 
 /**
  * Generate UUID v4
@@ -50,10 +60,8 @@ function buildFooter(userId: string, displayName: string, trackingId: string): {
 
 	const text = `
 
-───────────────────────────────
-Sent on behalf of: ${displayName} (ID: ${userId})
-This is an automated email - please do not reply to this address.
-Report abuse: ${reportUrl}
+---
+Sent via Odel for ${displayName} | Report abuse: ${reportUrl}
 `;
 
 	const html = `
@@ -78,6 +86,14 @@ function escapeHtml(unsafe: string): string {
 		.replace(/>/g, '&gt;')
 		.replace(/"/g, '&quot;')
 		.replace(/'/g, '&#039;');
+}
+
+/**
+ * Convert plain text to basic HTML
+ */
+function textToHtml(text: string): string {
+	const escaped = escapeHtml(text);
+	return `<div style="font-family: sans-serif; font-size: 14px; line-height: 1.5;">${escaped.replace(/\n/g, '<br>')}</div>`;
 }
 
 /**
@@ -121,7 +137,7 @@ async function sendViaResend(
 function createServer() {
 	const server = new McpServer({
 		name: 'email-simple',
-		version: '0.0.2'
+		version: '1.0.1'
 	});
 
 	return server;
@@ -157,9 +173,7 @@ function createSendEmailHandler(context: ToolContext<Env>) {
 
 			// Append footer to email content
 			const fullText = input.text + footer.text;
-			const fullHtml = input.html
-				? input.html + footer.html
-				: undefined;
+			const fullHtml = (input.html ?? textToHtml(input.text)) + footer.html;
 
 			// Construct subject
 			const subject = `Odel has sent: ${input.subject_suffix}`;
@@ -227,7 +241,8 @@ export default {
 				'send_email',
 				{
 					description: 'Send an email to a recipient with optional HTML formatting',
-					inputSchema: SendEmailInputSchema
+					inputSchema: SendEmailInputSchema,
+					outputSchema: SendEmailOutputSchema
 				},
 				async (args): Promise<CallToolResult> => {
 					const result = await handler(args as SendEmailInput);
