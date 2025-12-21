@@ -241,8 +241,7 @@ export default {
 				'send_email',
 				{
 					description: 'Send an email to a recipient with optional HTML formatting',
-					inputSchema: SendEmailInputSchema,
-					outputSchema: SendEmailOutputSchema
+					inputSchema: SendEmailInputSchema
 				},
 				async (args): Promise<CallToolResult> => {
 					const result = await handler(args as SendEmailInput);
